@@ -14,3 +14,8 @@ log/
 # Auto-generated GUI state files (Polyscope / ImGui)
 .polyscope.ini
 imgui.ini
+
+.venv
+poetry.lock
+.claude
+.vscode

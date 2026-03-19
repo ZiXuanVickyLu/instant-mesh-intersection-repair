@@ -1,5 +1,5 @@
 expname: misc
-objpath: ./data/misc/celtic_knot.obj
+objpath: ./data/misc/trefoil_knot.obj
 optimizer: GD
 lr: 0.001
 savepath: ./results

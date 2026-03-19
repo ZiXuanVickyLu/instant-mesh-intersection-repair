@@ -1,0 +1,272 @@
+diff --git a/src/bvh_cuda_op.cu b/src/bvh_cuda_op.cu
+index d92db4c..09a59cb 100644
+--- a/src/bvh_cuda_op.cu
++++ b/src/bvh_cuda_op.cu
+@@ -37,6 +37,20 @@
+ #include "double_vec_ops.h"
+ #include "helper_math.h"
+ 
++// On Windows, long is 32-bit but PyTorch's torch.long is int64_t (64-bit).
++// Use longlong2 to ensure collision index pairs match PyTorch's tensor dtype.
++#ifdef _MSC_VER
++using idx2 = longlong2;
++static inline __host__ __device__ idx2 make_idx2(long long x, long long y) {
++    return make_longlong2(x, y);
++}
++#else
++using idx2 = long2;
++static inline __host__ __device__ idx2 make_idx2(long x, long y) {
++    return make_idx2(x, y);
++}
++#endif
++
+ // Size of the stack used to traverse the Bounding Volume Hierarchy tree
+ #ifndef STACK_SIZE
+ #define STACK_SIZE 64
+@@ -125,9 +139,9 @@ __host__ __device__ inline double3 fmax(const double3 &a, const double3 &b) {
+   return make_double3(fmax(a.x, b.x), fmax(a.y, b.y), fmax(a.z, b.z));
+ }
+ 
+-struct is_valid_cnt : public thrust::unary_function<long2, int> {
++struct is_valid_cnt : public thrust::unary_function<idx2, int> {
+ public:
+-  __host__ __device__ int operator()(long2 vec) const {
++  __host__ __device__ int operator()(idx2 vec) const {
+     return vec.x >= 0 && vec.y >= 0;
+   }
+ };
+@@ -352,7 +366,7 @@ shareVertex(const Triangle<T> &tri1, const Triangle<T> &tri2) {
+ }
+ 
+ template <typename T>
+-__global__ void checkTriangleIntersections(long2 *collisions,
++__global__ void checkTriangleIntersections(idx2 *collisions,
+                                            Triangle<T> *triangles,
+                                            int num_cand_collisions,
+                                            int num_triangles) {
+@@ -366,9 +380,9 @@ __global__ void checkTriangleIntersections(long2 *collisions,
+     bool do_collide = TriangleTriangleIsectSepAxis<T>(tri1, tri2) &&
+                       !shareVertex<T>(tri1, tri2);
+     if (do_collide) {
+-      collisions[idx] = make_long2(first_tri_idx, second_tri_idx);
++      collisions[idx] = make_idx2(first_tri_idx, second_tri_idx);
+     } else {
+-      collisions[idx] = make_long2(-1, -1);
++      collisions[idx] = make_idx2(-1, -1);
+     }
+   }
+   return;
+@@ -406,7 +420,7 @@ __device__
+ }
+ 
+ template <typename T>
+-__device__ int traverseBVH(long2 *collisionIndices, BVHNodePtr<T> root,
++__device__ int traverseBVH(idx2 *collisionIndices, BVHNodePtr<T> root,
+                            const AABB<T> &queryAABB, int queryObjectIdx,
+                            BVHNodePtr<T> leaf, int max_collisions,
+                            int *counter) {
+@@ -454,17 +468,17 @@ __device__ int traverseBVH(long2 *collisionIndices, BVHNodePtr<T> root,
+       collisionIndices[coll_idx] =
+           // collisionIndices[num_collisions % max_collisions] =
+           // *collisionIndices++ =
+-          make_long2(min(queryObjectIdx, childL->idx),
++          make_idx2(min(queryObjectIdx, childL->idx),
+                      max(queryObjectIdx, childL->idx));
+       num_collisions++;
+     }
+ 
+     if (overlapR && childR->isLeaf()) {
+       int coll_idx = atomicAdd(counter, 1);
+-      collisionIndices[coll_idx] = make_long2(
++      collisionIndices[coll_idx] = make_idx2(
+           // min(queryObjectIdx, childR->idx),
+           // max(queryObjectIdx, childR->idx));
+-          // collisionIndices[num_collisions % max_collisions] = make_long2(
++          // collisionIndices[num_collisions % max_collisions] = make_idx2(
+           min(queryObjectIdx, childR->idx), max(queryObjectIdx, childR->idx));
+       num_collisions++;
+     }
+@@ -488,7 +502,7 @@ __device__ int traverseBVH(long2 *collisionIndices, BVHNodePtr<T> root,
+ }
+ 
+ template <typename T>
+-__global__ void findPotentialCollisions(long2 *collisionIndices,
++__global__ void findPotentialCollisions(idx2 *collisionIndices,
+                                         BVHNodePtr<T> root,
+                                         BVHNodePtr<T> leaves, int *triangle_ids,
+                                         int num_primitives,
+@@ -929,7 +943,7 @@ void bvh_cuda_forward(at::Tensor triangles, at::Tensor *collision_tensor_ptr,
+   int blockSize = NUM_THREADS;
+   int gridSize = (num_triangles + blockSize - 1) / blockSize;
+ 
+-  thrust::device_vector<long2> collisionIndices(num_triangles * max_collisions);
++  thrust::device_vector<idx2> collisionIndices(num_triangles * max_collisions);
+ 
+ #if PRINT_TIMINGS == 1
+   cudaEvent_t start, stop;
+@@ -956,26 +970,11 @@ void bvh_cuda_forward(at::Tensor triangles, at::Tensor *collision_tensor_ptr,
+               num_triangles * bidx;
+ 
+           thrust::fill(collisionIndices.begin(), collisionIndices.end(),
+-                       make_long2(-1, -1));
++                       make_idx2(-1, -1));
+ 
+-#if DEBUG_PRINT == 1
+-          std::cout << "Start building BVH" << std::endl;
+-#endif
+           buildBVH<scalar_t>(internal_nodes.data().get(),
+                              leaf_nodes.data().get(), triangles_ptr,
+                              &triangle_ids, num_triangles, batch_size);
+-#if DEBUG_PRINT == 1
+-          std::cout << "Successfully built BVH" << std::endl;
+-#endif
+-
+-#if DEBUG_PRINT == 1
+-          std::cout << "Launching collision detection ..." << std::endl;
+-#endif
+-
+-#if PRINT_TIMINGS == 1
+-          cudaEventRecord(start);
+-#endif
+-          // std::cout << tmp[0].right->bbox << std::endl;
+ 
+           findPotentialCollisions<scalar_t><<<gridSize, blockSize>>>(
+               collisionIndices.data().get(),
+@@ -984,131 +983,38 @@ void bvh_cuda_forward(at::Tensor triangles, at::Tensor *collision_tensor_ptr,
+               max_collisions, &collision_idx_cnt.data().get()[bidx]);
+           cudaDeviceSynchronize();
+ 
+-#if PRINT_TIMINGS == 1
+-          cudaEventRecord(stop);
+-#endif
+           cudaCheckError();
+-#if DEBUG_PRINT == 1
+-          std::cout << "AABB Collision detection finished ..." << std::endl;
+-#endif
+-
+-#if PRINT_TIMINGS == 1
+-          cudaEventSynchronize(stop);
+-          float milliseconds = 0;
+-          cudaEventElapsedTime(&milliseconds, start, stop);
+-          std::cout << "FindPotentialCollisions = " << milliseconds << " (ms)"
+-                    << std::endl;
+-#endif
+-
+-      // Calculate the number of potential collisions
+-#if DEBUG_PRINT == 1
+-          std::cout << "Starting stream compaction to keep only valid"
+-                    << " potential collisions" << std::endl;
+-#endif
+ 
+-#if PRINT_TIMINGS == 1
+-          cudaEventRecord(start);
+-#endif
++          // Calculate the number of potential collisions
+           int num_cand_collisions =
+               thrust::reduce(thrust::make_transform_iterator(
+                                  collisionIndices.begin(), is_valid_cnt()),
+                              thrust::make_transform_iterator(
+                                  collisionIndices.end(), is_valid_cnt()));
+-#if PRINT_TIMINGS == 1
+-          cudaEventRecord(stop);
+-#endif
+-#if DEBUG_PRINT == 1
+-          std::cout << "Bounding box collisions detected = "
+-                    << num_cand_collisions << std::endl;
+-#endif
+ 
+-#if PRINT_TIMINGS == 1
+-          cudaEventSynchronize(stop);
+-          milliseconds = 0;
+-          cudaEventElapsedTime(&milliseconds, start, stop);
+-          std::cout << "Count AABB collisions elapsed time = " << milliseconds
+-                    << " (ms)" << std::endl;
+-#endif
+           if (num_cand_collisions > 0) {
+-
+-#if PRINT_TIMINGS == 1
+-            cudaEventRecord(start);
+-#endif
+             // Keep only the pairs of ids where a bounding box to bounding box
+             // collision was detected.
+-            thrust::device_vector<long2> collisions(num_cand_collisions,
+-                                                    make_long2(-1, -1));
++            thrust::device_vector<idx2> collisions(num_cand_collisions,
++                                                    make_idx2(-1, -1));
+             thrust::copy_if(collisionIndices.begin(), collisionIndices.end(),
+                             collisions.begin(), is_valid_cnt());
+ 
+             cudaCheckError();
+-#if PRINT_TIMINGS == 1
+-            cudaEventRecord(stop);
+-#endif
+-#if PRINT_TIMINGS == 1
+-            cudaEventSynchronize(stop);
+-            milliseconds = 0;
+-            cudaEventElapsedTime(&milliseconds, start, stop);
+-            std::cout << "Stream compaction for AABB collisions copy elapsed"
+-                      << " time = " << milliseconds << " (ms)" << std::endl;
+-#endif
+ 
+-#if DEBUG_PRINT == 1
+-            std::cout << "Finished with stream compaction ..." << std::endl;
+-#endif
+-
+-#if DEBUG_PRINT == 1
+-            std::cout << "Check for triangle to triangle intersection ..."
+-                      << std::endl;
+-#endif
+-
+-#if PRINT_TIMINGS == 1
+-            cudaEventRecord(start);
+-#endif
+             int tri_grid_size =
+                 (collisions.size() + blockSize - 1) / blockSize;
+             checkTriangleIntersections<scalar_t><<<tri_grid_size, blockSize>>>(
+                 collisions.data().get(), triangles_ptr, collisions.size(),
+                 num_triangles);
+-#if PRINT_TIMINGS == 1
+-            cudaEventRecord(stop);
+-#endif
+             cudaCheckError();
+ 
+-#if DEBUG_PRINT == 1
+-            std::cout << "Finished triangle to triangle intersection ..."
+-                      << std::endl;
+-#endif
+-
+-#if PRINT_TIMINGS == 1
+-            cudaEventSynchronize(stop);
+-            milliseconds = 0;
+-            cudaEventElapsedTime(&milliseconds, start, stop);
+-            std::cout << "Triangle-to-Triangle intersection tests elapsed"
+-                      << " time = " << milliseconds << " (ms)" << std::endl;
+-#endif
+-
+-#if PRINT_TIMINGS == 1
+-            cudaEventRecord(start);
+-#endif
+-            long *dev_ptr = collision_tensor_ptr->data<long>();
++            int64_t *dev_ptr = collision_tensor_ptr->data_ptr<int64_t>();
+             cudaMemcpy(dev_ptr + bidx * num_triangles * max_collisions * 2,
+-                       (long *)collisions.data().get(),
+-                       2 * collisions.size() * sizeof(long),
++                       collisions.data().get(),
++                       collisions.size() * sizeof(idx2),
+                        cudaMemcpyDeviceToDevice);
+             cudaCheckError();
+-
+-#if PRINT_TIMINGS == 1
+-            cudaEventRecord(stop);
+-#endif
+-
+-#if PRINT_TIMINGS == 1
+-            cudaEventSynchronize(stop);
+-            milliseconds = 0;
+-            cudaEventElapsedTime(&milliseconds, start, stop);
+-            std::cout << "Copy CUDA array to tensor " << milliseconds << " (ms)"
+-                      << std::endl;
+-#endif
+           }
+         }
+       }));

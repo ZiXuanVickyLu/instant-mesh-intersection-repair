@@ -51,6 +51,8 @@ def main(config):
     Returns:
         None: Saves intermediate and final mesh files to disk.
     """
+    device = torch.device('cuda')
+
     # Ensure output directory exists
     Path(config['savepath']).mkdir(parents=True, exist_ok=True)
 
@@ -201,6 +203,7 @@ def main_vis(config):
     import polyscope as ps
     import polyscope.imgui as psim
 
+    device = torch.device('cuda')
     MAX_STEPS = 60
 
     # Ensure output directory exists
@@ -281,10 +284,9 @@ def main_vis(config):
 
     def _update_collision_overlay(col_idxs):
         """Update the per-face collision scalar: red when intersections exist, green when resolved."""
-        cmap = 'greens' if col_idxs.shape[0] == 0 else 'reds'
         ps_mesh.add_scalar_quantity(
             "collisions", _collision_mask(col_idxs),
-            defined_on='faces', enabled=True, cmap=cmap
+            defined_on='faces', enabled=True, cmap='reds'
         )
 
     # Show initial collision state
@@ -412,7 +414,8 @@ def main_vis(config):
     ps.show()
 
 
-if __name__ == "__main__":
+def cli():
+    """Console script entry point for mesh-repair command."""
     parser = argparse.ArgumentParser(
         description='Instant Self-Intersection Repair for 3D Meshes'
     )
@@ -430,13 +433,16 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Load configuration and setup device
+    # Load configuration
     config = configs.load_config(args.config)
     configs.save_experiment_config(config)
-    device = torch.device('cuda')
 
     # Run mesh repair (with or without visualization)
     if args.vis:
         main_vis(config)
     else:
         main(config)
+
+
+if __name__ == "__main__":
+    cli()

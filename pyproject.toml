@@ -1,0 +1,42 @@
+[tool.poetry]
+name = "instant-mesh-repair"
+version = "0.1.0"
+description = "Instant Self-Intersection Repair for 3D Meshes"
+authors = ["Wonjong Jang"]
+readme = "README.md"
+packages = [
+    {include = "configs"},
+    {include = "constraints"},
+    {include = "energies"},
+    {include = "largesteps"},
+    {include = "mutils"},
+    {include = "optimizers"},
+    {include = "repair_factory.py"},
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# Keep torch without source — the consuming project controls CUDA source
+torch = ">=2.0.0"
+numpy = ">=1.24.0"
+scipy = ">=1.11.0"
+PyYAML = ">=6.0"
+potpourri3d = ">=1.3"
+cholespy = ">=1.0.0"
+
+# Optional: only needed for --vis mode
+polyscope = {version = ">=2.1.0", optional = true}
+
+[tool.poetry.extras]
+vis = ["polyscope"]
+
+[tool.poetry.scripts]
+mesh-repair = "repair_factory:cli"
+
+[tool.poetry.group.dev.dependencies]
+polyscope = ">=2.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
