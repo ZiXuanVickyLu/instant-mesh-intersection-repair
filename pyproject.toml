@@ -17,8 +17,10 @@ packages = [
 [tool.poetry.dependencies]
 python = "^3.11"
 
-# Keep torch without source — the consuming project controls CUDA source
-torch = ">=2.0.0"
+# PyTorch with CUDA 12.6 support
+torch = {version = "^2.7.1", source = "pytorch"}
+torchvision = {version = "^0.22.1", source = "pytorch"}
+torchaudio = {version = "^2.7.1", source = "pytorch", optional = true}
 numpy = ">=1.24.0"
 scipy = ">=1.11.0"
 PyYAML = ">=6.0"
@@ -27,6 +29,7 @@ cholespy = ">=1.0.0"
 toml = "^0.10.2"
 tqdm = "^4.66.0"
 trimesh = "^4.0.0"
+rtree = ">=1.0.0"
 
 # Optional: only needed for --vis mode
 polyscope = {version = ">=2.1.0", optional = true}
@@ -39,6 +42,11 @@ mesh-repair = "repair_factory:cli"
 
 [tool.poetry.group.dev.dependencies]
 polyscope = ">=2.1.0"
+
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu126"
+priority = "explicit"
 
 [build-system]
 requires = ["poetry-core"]
