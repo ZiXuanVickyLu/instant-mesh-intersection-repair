@@ -32,16 +32,28 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "poetry install failed" }
 
     # --- 3b. Reinstall torch with CUDA support (Poetry installs CPU-only from PyPI) ---
-    Write-Host "[3b/5] Installing CUDA-enabled torch ..." -ForegroundColor Cyan
-    pip install torch --index-url https://download.pytorch.org/whl/cu126 --force-reinstall --no-deps
-    if ($LASTEXITCODE -ne 0) { throw "CUDA torch install failed" }
+    $cudaCheck = python -c "import torch; print(torch.cuda.is_available())" 2>&1
+    if ($cudaCheck -eq "True") {
+        Write-Host "[3b/5] CUDA-enabled torch already installed, skipping" -ForegroundColor Yellow
+    } else {
+        Write-Host "[3b/5] Installing CUDA-enabled torch ..." -ForegroundColor Cyan
+        pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu126 --force-reinstall --no-deps
+        if ($LASTEXITCODE -ne 0) { throw "CUDA torch install failed" }
+    }
 
     # --- 3c. Apply torch-mesh-isect compatibility patch ---
     Write-Host "[3c/5] Applying torch-mesh-isect patch ..." -ForegroundColor Cyan
     $patchFile = Join-Path $RepoRoot "patches\torch-mesh-isect-win-fix.patch"
     $isectDir = Join-Path $RepoRoot "externals\torch-mesh-isect"
-    git -C $isectDir apply --check $patchFile 2>$null
-    if ($LASTEXITCODE -eq 0) {
+    $patchNeeded = $true
+    try {
+        $ErrorActionPreference = "Continue"
+        git -C $isectDir apply --check $patchFile 2>&1 | Out-Null
+        $patchNeeded = ($LASTEXITCODE -eq 0)
+    } finally {
+        $ErrorActionPreference = "Stop"
+    }
+    if ($patchNeeded) {
         git -C $isectDir apply $patchFile
         Write-Host "  Patch applied successfully" -ForegroundColor DarkGray
     } else {
