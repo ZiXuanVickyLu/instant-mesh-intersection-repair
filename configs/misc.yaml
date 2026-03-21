@@ -1,9 +1,9 @@
 expname: misc
-objpath: ./data/misc/trefoil_knot.obj
+objpath: ./data/misc/hair_tube3.obj
 optimizer: GD
-lr: 0.001
+lr: 0.002
 savepath: ./results
-max_collisions: 8
-energy: signed_TPE_verts
+max_collisions: 64
+energy: signed_TPE 
 constraints:
-  - curvature
+  - volume

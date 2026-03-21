@@ -1,0 +1,20 @@
+# Multi-tube relaxation configuration
+# Usage:
+#   python -m hair_tube_relaxation.run_tube_relaxation \
+#       --tube-dir ./data/tubes/ \
+#       --output-dir ./results/tubes_relaxed/ \
+#       --save-combined
+
+# Optimization
+n_iters: 60
+lr: 0.001
+alpha: 0.99
+max_collisions: 64
+
+# Tube scaling
+target_scale: 0.8
+current_scale: 0.1
+
+# Constraint weights
+w_curvature: 1.0e+6
+w_root_pin: 1.0e+7
