@@ -1,5 +1,5 @@
 diff --git a/src/bvh_cuda_op.cu b/src/bvh_cuda_op.cu
-index d92db4c..09a59cb 100644
+index d92db4c..d902702 100644
 --- a/src/bvh_cuda_op.cu
 +++ b/src/bvh_cuda_op.cu
 @@ -37,6 +37,20 @@
@@ -56,7 +56,7 @@ index d92db4c..09a59cb 100644
      }
    }
    return;
-@@ -406,7 +420,7 @@ __device__
+@@ -406,10 +420,10 @@ __device__
  }
  
  template <typename T>
@@ -64,29 +64,49 @@ index d92db4c..09a59cb 100644
 +__device__ int traverseBVH(idx2 *collisionIndices, BVHNodePtr<T> root,
                             const AABB<T> &queryAABB, int queryObjectIdx,
                             BVHNodePtr<T> leaf, int max_collisions,
-                            int *counter) {
-@@ -454,17 +468,17 @@ __device__ int traverseBVH(long2 *collisionIndices, BVHNodePtr<T> root,
-       collisionIndices[coll_idx] =
-           // collisionIndices[num_collisions % max_collisions] =
-           // *collisionIndices++ =
+-                           int *counter) {
++                           int *counter, int num_primitives) {
+   int num_collisions = 0;
+   // Allocate traversal stack from thread-local memory,
+   // and push NULL to indicate that there are no postponed nodes.
+@@ -446,26 +460,23 @@ __device__ int traverseBVH(long2 *collisionIndices, BVHNodePtr<T> root,
+ #endif
+ 
+     // Query overlaps a leaf node => report collision.
++    int max_total = num_primitives * max_collisions;
+     if (overlapL && childL->isLeaf()) {
+-      // Append the collision to the main array
+-      // Increase the number of detection collisions
+-      // num_collisions++;
+       int coll_idx = atomicAdd(counter, 1);
+-      collisionIndices[coll_idx] =
+-          // collisionIndices[num_collisions % max_collisions] =
+-          // *collisionIndices++ =
 -          make_long2(min(queryObjectIdx, childL->idx),
-+          make_idx2(min(queryObjectIdx, childL->idx),
-                      max(queryObjectIdx, childL->idx));
+-                     max(queryObjectIdx, childL->idx));
++      if (coll_idx < max_total) {
++        collisionIndices[coll_idx] =
++            make_idx2(min(queryObjectIdx, childL->idx),
++                       max(queryObjectIdx, childL->idx));
++      }
        num_collisions++;
      }
  
      if (overlapR && childR->isLeaf()) {
        int coll_idx = atomicAdd(counter, 1);
 -      collisionIndices[coll_idx] = make_long2(
-+      collisionIndices[coll_idx] = make_idx2(
-           // min(queryObjectIdx, childR->idx),
-           // max(queryObjectIdx, childR->idx));
+-          // min(queryObjectIdx, childR->idx),
+-          // max(queryObjectIdx, childR->idx));
 -          // collisionIndices[num_collisions % max_collisions] = make_long2(
-+          // collisionIndices[num_collisions % max_collisions] = make_idx2(
-           min(queryObjectIdx, childR->idx), max(queryObjectIdx, childR->idx));
+-          min(queryObjectIdx, childR->idx), max(queryObjectIdx, childR->idx));
++      if (coll_idx < max_total) {
++        collisionIndices[coll_idx] = make_idx2(
++            min(queryObjectIdx, childR->idx), max(queryObjectIdx, childR->idx));
++      }
        num_collisions++;
      }
-@@ -488,7 +502,7 @@ __device__ int traverseBVH(long2 *collisionIndices, BVHNodePtr<T> root,
+ 
+@@ -488,7 +499,7 @@ __device__ int traverseBVH(long2 *collisionIndices, BVHNodePtr<T> root,
  }
  
  template <typename T>
@@ -95,7 +115,16 @@ index d92db4c..09a59cb 100644
                                          BVHNodePtr<T> root,
                                          BVHNodePtr<T> leaves, int *triangle_ids,
                                          int num_primitives,
-@@ -929,7 +943,7 @@ void bvh_cuda_forward(at::Tensor triangles, at::Tensor *collision_tensor_ptr,
+@@ -500,7 +511,7 @@ __global__ void findPotentialCollisions(long2 *collisionIndices,
+     int triangle_id = triangle_ids[idx];
+     int num_collisions =
+         traverseBVH<T>(collisionIndices, root, leaf->bbox, triangle_id,
+-                       leaf, max_collisions, counter);
++                       leaf, max_collisions, counter, num_primitives);
+   }
+   return;
+ }
+@@ -929,7 +940,7 @@ void bvh_cuda_forward(at::Tensor triangles, at::Tensor *collision_tensor_ptr,
    int blockSize = NUM_THREADS;
    int gridSize = (num_triangles + blockSize - 1) / blockSize;
  
@@ -104,7 +133,7 @@ index d92db4c..09a59cb 100644
  
  #if PRINT_TIMINGS == 1
    cudaEvent_t start, stop;
-@@ -956,26 +970,11 @@ void bvh_cuda_forward(at::Tensor triangles, at::Tensor *collision_tensor_ptr,
+@@ -956,26 +967,11 @@ void bvh_cuda_forward(at::Tensor triangles, at::Tensor *collision_tensor_ptr,
                num_triangles * bidx;
  
            thrust::fill(collisionIndices.begin(), collisionIndices.end(),
@@ -132,7 +161,7 @@ index d92db4c..09a59cb 100644
  
            findPotentialCollisions<scalar_t><<<gridSize, blockSize>>>(
                collisionIndices.data().get(),
-@@ -984,131 +983,38 @@ void bvh_cuda_forward(at::Tensor triangles, at::Tensor *collision_tensor_ptr,
+@@ -984,131 +980,38 @@ void bvh_cuda_forward(at::Tensor triangles, at::Tensor *collision_tensor_ptr,
                max_collisions, &collision_idx_cnt.data().get()[bidx]);
            cudaDeviceSynchronize();
  

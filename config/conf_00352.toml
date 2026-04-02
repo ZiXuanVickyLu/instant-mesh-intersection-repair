@@ -8,4 +8,4 @@ scalp_mesh = "TSR/scalp_with_uv.obj"
 base_path = "data/TSR/00352"
 
 [strand]
-penetration_thickness = 0.01
+penetration_thickness = 0.0001

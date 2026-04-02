@@ -31,6 +31,7 @@ tqdm = "^4.66.0"
 trimesh = "^4.0.0"
 rtree = ">=1.0.0"
 open3d = "^0.18.0"
+warp-lang = ">=1.12.0"
 
 # Optional: only needed for --vis mode
 polyscope = {version = ">=2.1.0", optional = true}

@@ -19,3 +19,6 @@ imgui.ini
 poetry.lock
 .claude
 .vscode
+_export/
+
+*/__pycache__/
